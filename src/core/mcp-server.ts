@@ -1,5 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { SSHConnectionManager } from "../services/ssh-connection-manager.js";
 import { CommandLineParser } from "../cli/command-line-parser.js";
 import { Logger } from "../utils/logger.js";
@@ -64,9 +67,11 @@ export class SshMcpServer {
 
     process.once("SIGINT", handleSignal);
     process.once("SIGTERM", handleSignal);
-    process.stdin.resume();
-    process.stdin.once("end", () => void this.shutdown("stdin end", 0));
-    process.stdin.once("close", () => void this.shutdown("stdin close", 0));
+    if (process.env.MCP_TRANSPORT !== "http") {
+      process.stdin.resume();
+      process.stdin.once("end", () => void this.shutdown("stdin end", 0));
+      process.stdin.once("close", () => void this.shutdown("stdin close", 0));
+    }
 
     this.shutdownHandlersRegistered = true;
   }
@@ -123,9 +128,20 @@ export class SshMcpServer {
     this.registerTools();
 
     // Create transport instance and connect
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-
-    Logger.log("MCP server connection established");
+    if (process.env.MCP_TRANSPORT === "http") {
+      const port = Number(process.env.MCP_PORT ?? 8080);
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
+      await this.server.connect(transport);
+      const httpServer = createServer((req, res) => {
+        void transport.handleRequest(req, res);
+      });
+      httpServer.listen(port, "0.0.0.0", () => {
+        Logger.log(`SSH MCP server listening on http://0.0.0.0:${port}/mcp`, "info");
+      });
+    } else {
+      const transport = new StdioServerTransport();
+      await this.server.connect(transport);
+      Logger.log("MCP server connection established");
+    }
   }
 }
