@@ -1,6 +1,7 @@
 # 依赖目录
 node_modules/
-package-lock.json
+# package-lock.json is tracked in this fork — the Dockerfile's `npm ci` needs
+# it committed for reproducible ghcr builds (agent-services-hive#223).
 
 # 构建输出
 build/
