@@ -83,8 +83,8 @@ export class CommandLineParser {
         privateKey: { type: "string", short: "k" },
         passphrase: { type: "string", short: "P" },
         agent: { type: "string", short: "a" },
-        whitelist: { type: "string", short: "W" },
-        blacklist: { type: "string", short: "B" },
+        whitelist: { type: "string", short: "W", multiple: true },
+        blacklist: { type: "string", short: "B", multiple: true },
         socksProxy: { type: "string", short: "s" },
         "allowed-local-paths": { type: "string" },
         "allowed-remote-paths": { type: "string" },
@@ -229,16 +229,14 @@ export class CommandLineParser {
         shellReadyTimeoutMs: values["shell-ready-timeout"],
         commandTemplate,
         commandWhitelist: whitelist
-          ? whitelist
-              .split(",")
-              .map((pattern) => pattern.trim())
-              .filter(Boolean)
+          ? (whitelist as string[]).flatMap((w) =>
+              w.split(",").map((p) => p.trim()).filter(Boolean)
+            )
           : undefined,
         commandBlacklist: blacklist
-          ? blacklist
-              .split(",")
-              .map((pattern) => pattern.trim())
-              .filter(Boolean)
+          ? (blacklist as string[]).flatMap((b) =>
+              b.split(",").map((p) => p.trim()).filter(Boolean)
+            )
           : undefined,
         allowedLocalPaths: allowedLocalPaths
           ? allowedLocalPaths

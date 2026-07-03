@@ -114,6 +114,8 @@ export class SSHConnectionManager {
   private pendingStatusCollections: Map<string, NodeJS.Timeout> = new Map();
   private commandWhitelistRegexes: Map<string, RegExp[]> = new Map();
   private commandBlacklistRegexes: Map<string, RegExp[]> = new Map();
+  private commandWhitelists: Map<string, string[]> = new Map();
+  private commandBlacklists: Map<string, string[]> = new Map();
   private shellStreams: Map<string, ClientChannel> = new Map();
   private shellReady: Map<string, boolean> = new Map();
   private shellQueues: Map<string, Promise<unknown>> = new Map();
@@ -153,6 +155,8 @@ export class SSHConnectionManager {
         name,
         this.compilePatterns(config.commandBlacklist, name, "blacklist"),
       );
+      this.commandWhitelists.set(name, config.commandWhitelist || []);
+      this.commandBlacklists.set(name, config.commandBlacklist || []);
     }
 
     this.configs = configs;
@@ -715,6 +719,8 @@ export class SSHConnectionManager {
     this.pendingConnections.clear();
     this.commandWhitelistRegexes.clear();
     this.commandBlacklistRegexes.clear();
+    this.commandWhitelists.clear();
+    this.commandBlacklists.clear();
     this.shellStreams.clear();
     this.shellReady.clear();
     this.shellQueues.clear();
@@ -1112,35 +1118,42 @@ export class SSHConnectionManager {
     name?: string,
   ): { isAllowed: boolean; reason?: string } {
     const key = name || this.defaultName;
-    const whitelistRegexes = this.commandWhitelistRegexes.get(key) || [];
-    if (whitelistRegexes.length > 0) {
-      const matchesWhitelist = whitelistRegexes.some((regex) =>
-        regex.test(command),
-      );
-      if (!matchesWhitelist) {
-        return {
-          isAllowed: false,
-          reason: "Command not in whitelist, execution forbidden",
-        };
+
+    if (process.env.ALLOWLIST_MATCH_MODE === "regex") {
+      // Opt-in regex mode: original behavior, unanchored patterns
+      const whitelistRegexes = this.commandWhitelistRegexes.get(key) || [];
+      if (whitelistRegexes.length > 0) {
+        const matchesWhitelist = whitelistRegexes.some((regex) => regex.test(command));
+        if (!matchesWhitelist) {
+          return { isAllowed: false, reason: "Command not in whitelist, execution forbidden" };
+        }
+      }
+      const blacklistRegexes = this.commandBlacklistRegexes.get(key) || [];
+      if (blacklistRegexes.length > 0) {
+        const matchesBlacklist = blacklistRegexes.some((regex) => regex.test(command));
+        if (matchesBlacklist) {
+          return { isAllowed: false, reason: "Command matches blacklist, execution forbidden" };
+        }
+      }
+    } else {
+      // Default: exact-match — only the exact string in the list passes
+      const whitelist = this.commandWhitelists.get(key) || [];
+      if (whitelist.length > 0) {
+        const matchesWhitelist = whitelist.some((cmd) => cmd.trim() === command.trim());
+        if (!matchesWhitelist) {
+          return { isAllowed: false, reason: "Command not in whitelist, execution forbidden" };
+        }
+      }
+      const blacklist = this.commandBlacklists.get(key) || [];
+      if (blacklist.length > 0) {
+        const matchesBlacklist = blacklist.some((cmd) => cmd.trim() === command.trim());
+        if (matchesBlacklist) {
+          return { isAllowed: false, reason: "Command matches blacklist, execution forbidden" };
+        }
       }
     }
 
-    const blacklistRegexes = this.commandBlacklistRegexes.get(key) || [];
-    if (blacklistRegexes.length > 0) {
-      const matchesBlacklist = blacklistRegexes.some((regex) =>
-        regex.test(command),
-      );
-      if (matchesBlacklist) {
-        return {
-          isAllowed: false,
-          reason: "Command matches blacklist, execution forbidden",
-        };
-      }
-    }
-
-    return {
-      isAllowed: true,
-    };
+    return { isAllowed: true };
   }
 
   private formatCommandFailure(
