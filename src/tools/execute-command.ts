@@ -3,6 +3,7 @@ import { z } from "zod";
 import { SSHConnectionManager } from "../services/ssh-connection-manager.js";
 import { Logger } from "../utils/logger.js";
 import { toToolError } from "../utils/tool-error.js";
+import { auditLog } from "../utils/audit-log.js";
 
 /**
  * Register execute command tool
@@ -39,12 +40,27 @@ export function registerExecuteCommandTool(server: McpServer): void {
             timeout,
           },
         );
+        auditLog({
+          action: "execute-command",
+          outcome: "success",
+          connectionName: connectionName ?? "default",
+          directory: directory ?? null,
+          command: cmdString,
+        });
         return {
           content: [{ type: "text", text: result }],
         };
       } catch (error: unknown) {
         const toolError = toToolError(error, "UNKNOWN_ERROR");
         Logger.handleError(toolError, "Failed to execute command");
+        auditLog({
+          action: "execute-command",
+          outcome: "error",
+          connectionName: connectionName ?? "default",
+          directory: directory ?? null,
+          command: cmdString,
+          errorCode: toolError.code,
+        });
         return {
           content: [{
             type: "text",
